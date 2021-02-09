@@ -1,0 +1,57 @@
+y=(c(RESULTADOS4[,1],RESULTADOS4[,2],RESULTADOS4[,3],RESULTADOS4[,4]))
+x=(rep(1:4,each=10000))
+x
+
+require(MASS)
+ymg = tapply(y,x,mean);ymg
+
+# variância
+
+variancia =tapply(y,x,var);variancia
+
+
+
+# número de observações em cada praia (np)
+#número total de observações (n) 
+#número de níveis do fator “praia” (niveis):
+np = tapply(y,x,length)
+n = sum(np)
+niveis = length(np)
+#cálculo da variância (Se2) 
+#matriz diagonal (Vμ), 
+s2hat <- sum((np-1)*variancia)/(n-niveis)
+Vmu <- diag(1/np)
+#Para a simular da distribuição posterior, definimos quantidade de amostras desejada
+m = 5000
+# amostra da precisão
+tau <- rgamma(m,(n-niveis)/2,s2hat*(n-niveis)/2)
+# amostra do desvio padrão (σ)
+sigma <- sqrt(1/tau)
+med.post <- numeric()
+# calculo da média posterior
+for(i in 1:m) med.post <- rbind(med.post,mvrnorm(1,as.numeric(ymg),Vmu/tau[i]))
+#Um exemplo de sumário estatístico para a amostra da posterior do desvio padrão (σ) seria:
+c(quantile(sigma,prob=c(0.025,0.5,0.975)),media=mean(sigma),dp=sd(sigma))
+#intervalo de credibilidade (ICr95%) compreende então valores entre 1.46 e 3.18. 
+#Sumários estatísticos para os efeitos dos quatro níveis do fator “praia”
+for(i in 1:ncol(med.post)) {print(c(quantile(med.post[,i],prob=c(0.025,0.5,0.975)),  media=mean(med.post[,i]),dp=sd(med.post[,i]))) }
+# Distribuição posterior.
+plot(density(med.post[,1]),xlim=c(0.52,0.57),ylim=c(0,400),xlab="Robustness",ylab= "Density",main=expression(rho==5))
+lines(density(med.post[,2]),col="red")
+lines(density(med.post[,3]),col="blue")
+lines(density(med.post[,4]),col="darkgreen")
+
+plot(density(med.post[,1]),probability="T")
+##
+h <- hist(med.post[,4], breaks = 100, plot=FALSE)
+h$counts=h$counts/sum(h$counts)
+plot(h,main="",xlab="Posterior Distribution")
+
+#A probabilidade de que μ3 seja maior que μ2 equivale a:
+sum(med.post[,2]>med.post[,1])/m
+#A probabilidade de que μ2 seja maior que μ4 equivale a:
+sum(med.post[,3]>med.post[,2])/m
+#A probabilidade de que μ4 seja maior que μ1 equivale a:
+sum(med.post[,4]>med.post[,3])/m
+
+
