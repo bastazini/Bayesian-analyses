@@ -1,0 +1,100 @@
+
+library(LaplacesDemon)
+
+##############################   Data  ###############################
+y =centr2
+X= cbind(1, as.matrix(dados1))
+J <- ncol(X)
+for (j in 2:J) X[,j] <- CenterScale(X[,j])
+#########################  Data List Preparation  #########################
+mon.names <- "LP"
+parm.names <- as.parm.names(list(beta=rep(0,J), sigma=0))
+pos.beta <- grep("beta", parm.names)
+pos.sigma <- grep("sigma", parm.names)
+PGF <- function(Data) {
+  beta <- rnorm(Data$J)
+  sigma <- runif(1)
+  return(c(beta, sigma))
+}
+MyData <- list(J=J, PGF=PGF, X=X, mon.names=mon.names,
+               parm.names=parm.names, pos.beta=pos.beta, pos.sigma=pos.sigma, y=y)
+##########################  Model Specification  ##########################
+Model <- function(parm, Data)
+{
+  ### Parameters
+  beta <- parm[Data$pos.beta]
+  sigma <- interval(parm[Data$pos.sigma], 1e-100, Inf)
+  parm[Data$pos.sigma] <- sigma
+  ### Log-Prior
+  beta.prior <- sum(dnormv(beta, 0, 1000, log=TRUE))
+  sigma.prior <- dhalfcauchy(sigma, 25, log=TRUE)
+  ### Log-Likelihood
+  mu <- tcrossprod(Data$X, t(beta))
+  LL <- sum(dnorm(Data$y, mu, sigma, log=TRUE))
+  ### Log-Posterior
+  LP <- LL + beta.prior + sigma.prior
+  Modelout <- list(LP=LP, Dev=-2*LL, Monitor=LP,
+                   yhat=rnorm(length(mu), mu, sigma), parm=parm)
+  return(Modelout)
+}
+#library(compiler)
+#Model <- cmpfun(Model) #Consider byte-compiling for more speed
+set.seed(666)
+############################  Initial Values  #############################
+Initial.Values <- GIV(Model, MyData, PGF=TRUE)
+###########################################################################
+# Examples of MCMC Algorithms                                             #
+###########################################################################
+####################  Automated Factor Slice Sampler  #####################
+Fit <- LaplacesDemon(Model, Data=MyData, Initial.Values,
+                     Covar=NULL, Iterations=1000, Status=100, Thinning=1,
+                     Algorithm="AFSS", Specs=list(A=Inf, B=NULL, m=100, n=0, w=1))
+Fit
+print(Fit)
+Consort(Fit)
+plot(BMK.Diagnostic(Fit))
+PosteriorChecks(Fit)
+caterpillar.plot(Fit, Parms="beta")
+BurnIn <- Fit$Rec.BurnIn.Thinned
+plot(Fit, BurnIn, MyData, PDF=FALSE)
+Pred <- predict(Fit, Model, MyData, CPUs=1)
+summary(Pred, Discrep="Chi-Square")
+plot(Pred, Style="Covariates", Data=MyData)
+plot(Pred, Style="Density", Rows=1:9)
+plot(Pred, Style="ECDF")
+plot(Pred, Style="Fitted")
+plot(Pred, Style="Jarque-Bera")
+plot(Pred, Style="Predictive Quantiles")
+plot(Pred, Style="Residual Density")
+plot(Pred, Style="Residuals")
+Levene.Test(Pred)
+Importance(Fit, Model, MyData, Discrep="Chi-Square")
+
+
+
+
+#############################  Gibbs Sampler  #############################
+### NOTE: Unlike the other samplers, Gibbs requires specifying a
+### function (FC) that draws from full conditionals.
+FC <- function(parm, Data)
+{
+     ### Parameters
+     beta <- parm[Data$pos.beta]
+     sigma <- interval(parm[Data$pos.sigma], 1e-100, Inf)
+sigma2 <- sigma*sigma
+     ### Hyperparameters
+     betamu <- rep(0,length(beta))
+     betaprec <- diag(length(beta))/1000
+     ### Update beta
+     XX <- crossprod(Data$X)
+     Xy <- crossprod(Data$X, Data$y)
+     IR <- backsolve(chol(XX/sigma2 + betaprec), diag(length(beta)))
+     btilde <- crossprod(t(IR)) %*% (Xy/sigma2 + betaprec %*% betamu)
+     beta <- btilde + IR %*% rnorm(length(beta))
+ return(c(beta,sigma))
+}
+library(compiler)
+FC <- cmpfun(FC) #Consider byte-compiling for more speed 
+Fit <- LaplacesDemon(Model, Data=MyData, Initial.Values,
+ Covar=NULL, Iterations=1000, Status=100, Thinning=1,
+Algorithm="Gibbs", Specs=list(FC=FC, MWG=pos.sigma))
